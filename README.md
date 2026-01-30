@@ -1,42 +1,130 @@
-# Crowd Monitoring System for Malls (Minimal Working Project)
+# Crowd Monitoring System for Malls 🏬👥
 
-**What this package contains**
-- A minimal Flask-based web app with Admin and User roles.
-- User dashboard includes a simple rule-based AI chatbot (text + Web Speech API),
-  parking dashboard (6 slots) that updates in real-time via Socket.IO,
-  and a mall crowd panel that displays counts reported by the admin.
-- Admin dashboard can toggle parking slots and upload a video file. Video processing
-  is implemented as a placeholder (a simple face detector if OpenCV and models are present).
+A **full-stack Python Flask project** for real-time crowd and parking monitoring. This system features **Admin and User dashboards**, **YOLOv8 video-based tracking**, **Socket.IO real-time updates**, and a **Gemini AI chatbot** integration.
 
-**Important**
-- This is a *starter/full-stack template* demonstrating how to wire together:
-  Flask + Flask-SocketIO, HTML/JS frontend with Web Speech API, parking slot management,
-  simple video-upload plumbing, and real-time updates.
-- **Age estimation and robust people entry/exit tracking require pre-trained ML models**
-  (not included). Places to drop models and instructions are in `app.py` and `utils/video_processing.py`.
+---
 
-**How to run (Linux / macOS / WSL)**
-1. Create a Python virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-2. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run the app:
-   ```bash
-   python app.py
-   ```
-4. Open http://localhost:5000 in your browser.
+## 📂 Project Structure
 
-**Default users**
-- Admin: username `admin`, password `adminpass`
-- User: username `user`, password `userpass`
+```text
+CROWD_MONITORING_SYSTEM/
+├── models/             # Pre-trained ML models (YOLOv8, Age, Gender)
+├── static/             # CSS, JS, and UI images
+├── templates/          # HTML templates (admin, user, login)
+├── uploads/            # Temporary storage for uploaded videos
+├── utils/              # Video processing & helper scripts
+├── app.py              # Main Flask application entry point
+├── README.md           # Project documentation
+├── requirements.txt    # Python dependencies
+└── yolov8n.pt          # YOLOv8 weights file
 
-**Notes / Next steps to improve**
-- Add real age-estimation models (e.g., DeepFace, wide-resnet based models) and place model files in `models/`.
-- Implement proper production authentication (Flask-Login + database).
-- Use Redis or database for persistence and horizontal scaling.
-- For a production voice chatbot connect to an LLM or embedding-based QA backend.
+```
+
+---
+
+## ✨ Key Features
+
+### 🛠️ Admin Dashboard
+
+* **Parking Control:** Toggle slots (`A1`–`A6`) with instant global updates.
+* **Crowd Management:** Upload entry videos to calculate total entries/exits.
+* **Live Stats:** Monitor real-time occupancy data.
+
+### 📱 User Dashboard
+
+* **Live Availability:** Check crowd levels and parking spots before visiting.
+* **AI Chatbot:** Text and Voice interaction via Web Speech API for mall FAQs.
+
+### 🤖 Monitoring Logic
+
+* **Detection:** Uses **YOLOv8** for high-accuracy person detection.
+* **Tracking:** Centroid tracking for entry/exit flow.
+* **Real-Time:** **Flask-SocketIO** ensures zero-refresh dashboard updates.
+
+---
+
+## ⚙️ System Requirements
+
+* **Python:** 3.10+
+* **Key Libs:** OpenCV, NumPy, Flask, Flask-SocketIO, Ultralytics (YOLOv8).
+* **Hardware:** CPU (GPU recommended for faster processing).
+
+---
+
+## 🚀 Quick Setup & Run
+
+### 1. Clone & Navigate
+
+```bash
+git clone <your-repo-url>
+cd CROWD_MONITORING_SYSTEM
+
+```
+
+### 2. Virtual Environment
+
+```bash
+# Windows
+python -m venv venv
+venv\Scripts\activate
+
+# Linux / macOS / WSL
+python3 -m venv venv
+source venv/bin/activate
+
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+
+```
+
+### 4. Configure API Keys
+
+Create a `.env` file in the root directory:
+
+```env
+GEMINI_API_KEY=your_actual_api_key_here
+
+```
+
+### 5. Launch
+
+```bash
+python app.py
+
+```
+
+> Access at: **http://127.0.0.1:5000**
+
+| Role | Username | Password |
+| --- | --- | --- |
+| **Admin** | `admin` | `adminpass` |
+| **User** | `user` | `userpass` |
+
+---
+
+## 🛠️ Usage & Deployment
+
+### Step 6: Using the Project
+
+* **Admin:** Upload a `.mp4` video in the panel to trigger the tracking script.
+* **User:** View live stats or ask the chatbot "Is there parking available?"
+
+### Optional: Advanced Tracking
+
+To enable Age/Gender detection, place `age_net.caffemodel` and `gender_net.caffemodel` in the `/models` folder and update `utils/video_processing.py`.
+
+### Push to GitHub
+
+```bash
+git init
+git add .
+git commit -m "Initial commit: Crowd Monitoring System"
+git branch -M main
+git remote add origin <your-github-repo-url>
+git push -u origin main
+
+```
