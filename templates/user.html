@@ -1,0 +1,255 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>User Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f8fc;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    a {
+      display: inline-block;
+      text-decoration: none;
+      color: #007bff;
+      font-weight: bold;
+    }
+
+    /* --- Chatbot Styles --- */
+    #chat {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 15px;
+      background: #fafafa;
+    }
+    #messages {
+      height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      background: #fff;
+      padding: 10px;
+      border-radius: 6px;
+    }
+    #chat_input {
+      width: 70%;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #aaa;
+    }
+    #send, #speak {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      background: #007bff;
+      color: #fff;
+      margin-left: 5px;
+    }
+    #send:hover, #speak:hover { background: #0056b3; }
+
+    /* --- Parking Slots --- */
+    .slot.free { background-color: #b3ffb3; }   /* green for free */
+    .slot.booked { background-color: #ff9999; } /* red for booked */
+    .slot {
+      cursor: pointer;
+      padding: 10px;
+      border: 1px solid #000;
+      width: 80px;
+      text-align: center;
+      border-radius: 10px;
+      box-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+    }
+
+    #ageChartContainer {
+      width: 100%;
+      max-width: 400px;
+      height: 400px;
+      margin: 30px auto;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>User Dashboard</h1>
+    <a href="/logout">Logout</a>
+
+    <!-- 🧠 AI Chatbot -->
+    <section>
+      <h2>AI Chatbot (Text + Voice)</h2>
+      <div id="chat">
+        <div id="messages"></div>
+        <div style="display:flex; align-items:center;">
+          <select id="langSelect" style="padding:6px; border-radius:6px;">
+            <option value="en-IN">English</option>
+            <option value="kn-IN">Kannada</option>
+          </select>
+
+          <input id="chat_input" placeholder="Ask about the mall...">
+          <button id="speak">🎙️</button>
+          <button id="send">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 🚗 Parking Slots -->
+    <section>
+      <h2>Parking Slots</h2>
+      <div id="parking" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+    </section>
+
+    <!-- 👥 Crowd Stats -->
+    <section>
+      <h2>Crowd Stats</h2>
+      <div id="mall_summary" style="font-size:18px; font-weight:bold; margin-bottom:10px;">
+        No crowd data available yet
+      </div>
+      <div id="crowdDensity" style="font-size:24px; font-weight:bold;"></div>
+
+      <div id="ageChartContainer">
+        <canvas id="ageChart"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <!-- 🗣️ Chatbot Script -->
+  <script src="/static/js/chatbot.js"></script>
+
+  <!-- 🔄 Real-time Dashboard Script -->
+  <script>
+    const socket = io();
+    let ageChart;
+
+    socket.on('connect', () => console.log('✅ Connected to server'));
+
+    // --- INITIAL FULL STATE (from admin) ---
+    socket.on('full_state', state => {
+      window.state = state;
+      renderParking();
+      renderMall();
+    });
+
+    // --- PARKING UPDATES ---
+    socket.on('parking_update', parking => {
+      if (!window.state) window.state = {};
+      window.state.parking = parking;
+      renderParking();
+    });
+
+    // --- CROWD UPDATES (after admin uploads video) ---
+    socket.on('mall_update', mall => {
+      if (!window.state) window.state = {};
+      window.state.mall = mall;
+      renderMall();
+    });
+
+    // ---------- RENDER PARKING ----------
+    function renderParking() {
+      const container = document.getElementById('parking');
+      container.innerHTML = '';
+      if (!window.state?.parking) return;
+
+      for (const slot in window.state.parking) {
+        const status = window.state.parking[slot];
+        const div = document.createElement('div');
+        div.className = `slot ${status === 'free' ? 'free' : 'booked'}`;
+        div.innerHTML = `<strong>Slot ${slot}</strong><br>${status}`;
+        container.appendChild(div);
+      }
+    }
+
+    // ---------- RENDER CROWD STATS ----------
+    function renderMall() {
+      const mall = window.state?.mall;
+      const el = document.getElementById('mall_summary');
+
+      // Only show data AFTER admin uploads a video
+      if (!mall || (!mall.in && !mall.out && !mall.inside)) {
+        el.innerText = "No crowd data available yet";
+        document.getElementById('crowdDensity').innerText = '';
+        document.getElementById('ageChartContainer').style.display = 'none';
+        return;
+      }
+
+      const inCount = mall.in || 0;
+      const outCount = mall.out || 0;
+      const insideCount = mall.inside || 0;
+
+      el.innerHTML = `<strong>In:</strong> ${inCount} &nbsp; 
+                      <strong>Out:</strong> ${outCount} &nbsp; 
+                      <strong>Inside:</strong> ${insideCount}`;
+
+      renderCrowdDensity(insideCount);
+
+      if (mall.age_counts && Object.keys(mall.age_counts).length > 0) {
+        renderAgeChart(mall.age_counts);
+      } else {
+        document.getElementById('ageChartContainer').style.display = 'none';
+      }
+    }
+
+    // ---------- CROWD DENSITY ----------
+    function renderCrowdDensity(insideCount) {
+      const el = document.getElementById('crowdDensity');
+      el.innerText = insideCount > 0
+        ? `${insideCount} people currently inside the mall`
+        : 'No crowd currently';
+    }
+
+    // ---------- AGE PIE CHART ----------
+    function renderAgeChart(ageCounts) {
+      document.getElementById('ageChartContainer').style.display = 'block';
+      const labels = Object.keys(ageCounts);
+      const values = Object.values(ageCounts);
+
+      const data = {
+        labels: labels,
+        datasets: [{
+          label: 'Age Distribution',
+          data: values,
+          backgroundColor: ['#FF6384','#36A2EB','#FFCE56','#4BC0C0','#9966FF','#F77825']
+        }]
+      };
+
+      const ctx = document.getElementById('ageChart').getContext('2d');
+      if (ageChart) {
+        ageChart.data = data;
+        ageChart.update();
+      } else {
+        ageChart = new Chart(ctx, {
+          type: 'pie',
+          data: data,
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { position: 'bottom' },
+              title: { display: true, text: 'Age Group Distribution in Crowd' }
+            }
+          }
+        });
+      }
+    }
+  </script>
+</body>
+</html>

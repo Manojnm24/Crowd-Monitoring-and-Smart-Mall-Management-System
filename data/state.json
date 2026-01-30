@@ -1,0 +1,16 @@
+{
+  "parking": {
+    "1": "free",
+    "2": "free",
+    "3": "free",
+    "4": "free",
+    "5": "free",
+    "6": "free"
+  },
+  "mall": {
+    "in": 0,
+    "out": 0,
+    "inside": 0,
+    "age_counts": [0, 0, 0, 0, 0, 0, 0, 0]
+  }
+}

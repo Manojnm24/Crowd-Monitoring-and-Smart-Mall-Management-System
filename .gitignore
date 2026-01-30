@@ -1,0 +1,36 @@
+# -------------------- Python --------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# -------------------- Virtual Environment --------------------
+venv/
+.env
+
+# -------------------- Flask Runtime --------------------
+uploads/
+instance/
+
+# -------------------- OS Files --------------------
+.DS_Store
+Thumbs.db
+
+# -------------------- IDE --------------------
+.vscode/
+.idea/
+
+# -------------------- Large / Media Files --------------------
+*.mp4
+*.avi
+*.mov
+
+# -------------------- YOLO / Model Weights --------------------
+yolov8n.pt
+
+# -------------------- Trial / Experimental Files --------------------
+trial
+trial1
+trial*
+finalentry*
+new*

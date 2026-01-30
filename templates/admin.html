@@ -1,0 +1,375 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; background:#fff; color:#111; }
+    .slot.free { background-color: #b3ffb3; }
+    .slot.booked { background-color: #ff9999; }
+    .slot { cursor: pointer; padding: 10px; border: 1px solid #000; width: 80px; text-align: center; border-radius:6px; }
+    #photoResult, #result { background:#f4f4f4; padding:10px; border:1px solid #ccc; margin-top:10px; white-space:pre-wrap; }
+    .video-container { position: relative; display: inline-block; }
+    video { border:2px solid #000; display:block; }
+    canvas { position:absolute; left:0; top:0; pointer-events:none; }
+    .container { max-width:1000px; margin:auto; padding:20px; }
+    section { margin-bottom:30px; position:relative; }
+    button { padding:8px 12px; border-radius:6px; border:1px solid #666; background:#eee; cursor:pointer; }
+    button:active { transform: translateY(1px); }
+    .controls { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Admin Dashboard</h1>
+  <a href="/logout">Logout</a>
+
+  <!-- Parking Slots -->
+  <section>
+    <h2>Parking Slots</h2>
+    <div id="parking" style="display:flex; gap:10px;"></div>
+  </section>
+
+  <!-- Upload Video -->
+  <section>
+    <h2>Upload Video (Analyze)</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <input type="file" name="file" accept="video/*" required>
+      <button type="submit">Upload & Analyze</button>
+    </form>
+    <pre id="result">No video uploaded yet.</pre>
+  </section>
+
+  <!-- Upload Photo -->
+  <section>
+    <h2>Upload Photo (Age & Gender Detection)</h2>
+    <form id="photoForm" enctype="multipart/form-data">
+      <input type="file" name="file" accept="image/*" required>
+      <button type="submit">Upload & Detect</button>
+    </form>
+    <pre id="photoResult">No photo uploaded yet.</pre>
+  </section>
+
+  <!-- Live Webcam -->
+  <section>
+    <h2>Live Webcam (Age & Gender)</h2>
+    <div class="controls">
+      <button id="startCam">Start Webcam</button>
+      <button id="stopCam" disabled>Stop Webcam</button>
+      <span id="camStatus">Stopped</span>
+    </div>
+
+    <div class="video-container">
+      <video id="video" width="640" height="480" autoplay muted playsinline></video>
+      <canvas id="overlay" width="640" height="480"></canvas>
+    </div>
+  </section>
+
+  <!-- Crowd Stats -->
+  <section>
+    <h2>Crowd Stats</h2>
+    <div id="mall_summary" style="font-size:18px; font-weight:bold; margin-bottom:10px;">Loading...</div>
+    <div id="crowdDensity" style="font-size:24px; font-weight:bold;"></div>
+  </section>
+</div>
+
+<script>
+/* ========= Client JS (robust) ========= */
+
+const socket = io(); // connects to same origin
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const ctx = overlay.getContext('2d');
+
+let streamHandle = null;
+let sendFrames = false;
+let lastSentMs = 0;
+const SEND_INTERVAL_MS = 100; // ~10 fps (adjust to reduce CPU/network)
+
+/* ---- initial client state ----
+   If server doesn't push a full state on connect, we attempt a quick fetch.
+   If that fails we set sane defaults and wait for server socket events.
+*/
+window.state = {
+  parking: { A1: 'free', A2: 'free', A3: 'free', A4: 'free', A5: 'free', A6: 'free' },
+  mall: { in: 0, out: 0, inside: 0 }
+};
+
+async function tryLoadInitialState() {
+  try {
+    // optional endpoint if your server offers it; if not this will 404 and be caught
+    const res = await fetch('/api/get_state');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.state) {
+        window.state = data.state;
+        renderParking();
+        renderMall();
+        return;
+      }
+    }
+  } catch (e) {
+    // ignore—server may not expose /api/get_state
+  }
+  // fallback: render defaults and rely on socket updates
+  renderParking();
+  renderMall();
+}
+
+/* ---- socket handlers ---- */
+socket.on('connect', () => {
+  console.log('Socket connected');
+  document.getElementById('camStatus').innerText = 'Connected to server';
+  // request server to push current state if server supports custom request (optional)
+  try { socket.emit('request_state'); } catch(e){ /* ignore */ }
+});
+
+socket.on('disconnect', () => {
+  console.warn('Socket disconnected');
+  document.getElementById('camStatus').innerText = 'Disconnected';
+});
+
+socket.on('parking_update', p => {
+  if (p) {
+    window.state.parking = p;
+    renderParking();
+  }
+});
+
+socket.on('mall_update', m => {
+  if (m) {
+    window.state.mall = m;
+    renderMall();
+  }
+});
+
+socket.on('face_data', faces => {
+  // draw overlays on top of video
+  overlay.width = video.videoWidth || overlay.width;
+  overlay.height = video.videoHeight || overlay.height;
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+
+  if (!faces || faces.length === 0) return;
+  faces.forEach(f => {
+    // defensive: sometimes server may send nulls
+    const x = f.x || 0, y = f.y || 0, w = f.w || 0, h = f.h || 0;
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    ctx.fillStyle = 'red';
+    ctx.font = '16px Arial';
+    const label = `${f.gender || 'Unknown'}, ${f.age || 'N/A'}`;
+    // keep label inside canvas
+    const textX = Math.max(0, x);
+    const textY = Math.max(12, y - 6);
+    ctx.fillText(label, textX, textY);
+  });
+});
+
+/* ---- parking UI ---- */
+function renderParking() {
+  const container = document.getElementById('parking');
+  container.innerHTML = '';
+  for (const k in window.state.parking) {
+    const div = document.createElement('div');
+    div.className = 'slot ' + (window.state.parking[k] === 'free' ? 'free' : 'booked');
+    div.innerHTML = `<strong>${k}</strong><br>${window.state.parking[k]}`;
+    div.onclick = async () => {
+      try {
+        const res = await fetch('/api/toggle_parking', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slot: k })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          alert('Failed to toggle parking: ' + (data.message || 'unknown'));
+        } else {
+          // either rely on socket parking_update or update immediately
+          if (data.state) {
+            window.state.parking = data.state;
+            renderParking();
+          }
+        }
+      } catch (err) {
+        console.error('toggle_parking error', err);
+        alert('Toggle parking error: ' + err.message);
+      }
+    };
+    container.appendChild(div);
+  }
+}
+
+/* ---- mall UI ---- */
+function renderMall() {
+  const mall = window.state.mall || { in: 0, out: 0, inside: 0 };
+
+  // ✅ Total Crowd = Inside + Out
+  const totalCrowd = mall.inside + mall.out;
+
+  document.getElementById('mall_summary').innerHTML =
+    `<strong>Total Crowd:</strong> ${totalCrowd} &nbsp;
+     <strong>In:</strong> ${mall.in} &nbsp;
+     <strong>Out:</strong> ${mall.out} &nbsp;
+     <strong>Inside:</strong> ${mall.inside}`;
+
+  document.getElementById('crowdDensity').innerText =
+    `${mall.inside} people currently inside the mall`;
+}
+
+
+/* ---- video upload ---- */
+const uploadForm = document.getElementById('uploadForm');
+const resultEl = document.getElementById('result');
+uploadForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fileInput = uploadForm.querySelector('input[type=file]');
+  if (!fileInput.files.length) return alert('Select a video file.');
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  resultEl.innerText = 'Uploading and analyzing... (this may take a while)';
+  try {
+    const res = await fetch('/api/upload_video', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      const totalCrowd = data.result.inside + data.result.out;
+
+resultEl.innerText = `Uploaded Video Crowd Stats:
+Total Crowd: ${totalCrowd}
+Out: ${data.result.out}
+Inside: ${data.result.inside}`;
+
+
+      // server will also broadcast mall_update via socket; render now
+      if (data.result) {
+        window.state.mall = data.result;
+        renderMall();
+      }
+    } else {
+      resultEl.innerText = `Error: ${data.message || 'server error'}`;
+    }
+  } catch (err) {
+    console.error('upload_video error', err);
+    resultEl.innerText = 'Upload failed: ' + err.message;
+  } finally {
+    fileInput.value = '';
+  }
+});
+
+/* ---- photo upload ---- */
+const photoForm = document.getElementById('photoForm');
+const photoResultEl = document.getElementById('photoResult');
+photoForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fileInput = photoForm.querySelector('input[type=file]');
+  if (!fileInput.files.length) return alert('Select a photo file.');
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  photoResultEl.innerText = 'Uploading and detecting...';
+  try {
+    const res = await fetch('/api/upload_photo', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      if (data.result && data.result.length > 0) {
+  let text = "Detected from Photo:\n";
+  data.result.forEach((face, index) => {
+  text += `Face ${index + 1}:\n`;
+  text += `Age Group: ${face.age}\n`;
+  text += `Gender: ${face.gender}\n\n`;
+});
+
+  photoResultEl.innerText = text;
+} else {
+  photoResultEl.innerText = "No face detected in the image.";
+}
+
+    } else {
+      photoResultEl.innerText = `Error: ${data.message || 'server error'}`;
+    }
+  } catch (err) {
+    console.error('upload_photo error', err);
+    photoResultEl.innerText = 'Upload failed: ' + err.message;
+  } finally {
+    fileInput.value = '';
+  }
+});
+
+/* ---- webcam streaming ---- */
+const startBtn = document.getElementById('startCam');
+const stopBtn = document.getElementById('stopCam');
+startBtn.addEventListener('click', startWebcam);
+stopBtn.addEventListener('click', stopWebcam);
+
+async function startWebcam() {
+  if (streamHandle) return;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    streamHandle = s;
+    video.srcObject = s;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    document.getElementById('camStatus').innerText = 'Webcam started';
+
+    // small offscreen canvas to capture frames
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+
+    sendFrames = true;
+    lastSentMs = 0;
+
+    const loop = (ts) => {
+      if (!sendFrames) return;
+      const now = Date.now();
+      if (!video.videoWidth || !video.videoHeight) {
+        requestAnimationFrame(loop);
+        return;
+      }
+
+      // throttle frame sending to SEND_INTERVAL_MS
+      if (now - lastSentMs >= SEND_INTERVAL_MS) {
+        offCanvas.width = video.videoWidth;
+        offCanvas.height = video.videoHeight;
+        offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+
+        try {
+          // toDataURL can be heavy; convert to blob when network/bandwidth matters
+          const dataUrl = offCanvas.toDataURL('image/jpeg', 0.6); // compression
+          socket.emit('webcam_frame', dataUrl);
+        } catch (err) {
+          console.error('frame send error', err);
+        }
+        lastSentMs = now;
+      }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  } catch (err) {
+    console.error('Cannot access webcam:', err);
+    alert('Cannot access webcam: ' + err.message);
+  }
+}
+
+function stopWebcam() {
+  if (!streamHandle) return;
+  sendFrames = false;
+  const tracks = streamHandle.getTracks();
+  for (const t of tracks) t.stop();
+  streamHandle = null;
+  video.srcObject = null;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  document.getElementById('camStatus').innerText = 'Stopped';
+  // clear overlay
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+}
+
+/* ---- On page load ---- */
+window.addEventListener('load', async () => {
+  await tryLoadInitialState();
+});
+</script>
+</body>
+</html>

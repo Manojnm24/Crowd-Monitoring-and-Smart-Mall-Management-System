@@ -1,0 +1,21 @@
+# -------------------- Web Backend --------------------
+flask>=2.3
+Werkzeug>=2.3
+flask-login>=0.6
+
+# -------------------- Real-time Communication --------------------
+flask-socketio>=5.3
+python-socketio>=5.11
+python-engineio>=4.8
+eventlet>=0.35
+
+# -------------------- Computer Vision --------------------
+opencv-python>=4.9
+numpy>=1.24
+scipy>=1.11
+
+# -------------------- AI / ML --------------------
+ultralytics>=8.1
+
+# -------------------- External API / HTTP --------------------
+requests>=2.31
