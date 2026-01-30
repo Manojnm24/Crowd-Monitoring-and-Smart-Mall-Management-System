@@ -128,3 +128,12 @@ git remote add origin <your-github-repo-url>
 git push -u origin main
 
 ```
+## sample outputs
+
+<img width="1226" height="526" alt="Screenshot 2026-01-30 201701" src="https://github.com/user-attachments/assets/1f54cbf8-39a5-406a-a6a8-a32b4587e560" />
+
+<img width="1205" height="536" alt="Screenshot 2026-01-30 201735" src="https://github.com/user-attachments/assets/32590abf-4dd6-4766-834a-1c96845a1ed6" />
+
+<img width="1070" height="471" alt="Screenshot 2026-01-30 201905" src="https://github.com/user-attachments/assets/67cdab2d-2188-455e-a5ad-d044ed962c6f" />
+
+
